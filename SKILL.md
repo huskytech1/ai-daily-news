@@ -1,8 +1,9 @@
 ---
 name: ai-daily-news
-description: 聚合抓取国内外 10 大顶级 AI 媒体与社区，二维核心语义降噪+自动翻译，生成包含五大板块的 24 小时 AI 行业精美 HTML 日报。
+description: 全自动生成 24 小时 AI 行业深度日报。支持抓取国内外 10 大媒体并自动翻译。当用户提到“AI 日报”、“AI 新闻”、“AI 简报”、“今天的 AI 动态”、“整理 AI 资讯”时，必须触发此技能。
 github_url: https://github.com/huskytech1/ai-daily-news
 ---
+
 
 # ai-daily-news
 
