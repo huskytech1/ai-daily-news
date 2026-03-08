@@ -413,7 +413,10 @@ html += """
 import os
 import webbrowser
 
-save_dir = os.path.expanduser("~/my_project_area/documents")
+DEFAULT_OUTPUT_DIR = os.path.join(os.path.expanduser("~"), "Documents", "ai-daily-news")
+save_dir = os.path.expanduser(
+    os.environ.get("AI_DAILY_NEWS_OUTPUT_DIR", DEFAULT_OUTPUT_DIR)
+)
 os.makedirs(save_dir, exist_ok=True)
 date_str = now_bj.strftime("%Y%m%d")
 output_path = f"{save_dir}/AI_Daily_News_{date_str}.html"

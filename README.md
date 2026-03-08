@@ -46,7 +46,13 @@
 > *"看看过去 24 小时有什么 AI 新闻"*
 > *"生成 AI Daily News"*
 
-Claude 将在后台极速执行 `main.py`，并将生成的精美 HTML 文件保存至你的本地文档目录（默认：`~/my_project_area/documents/`），点击即可在浏览器中阅读。
+Claude 将在后台极速执行 `main.py`，并将生成的精美 HTML 文件保存至你的本地文档目录（默认：`~/Documents/ai-daily-news/`），点击即可在浏览器中阅读。
+
+如需自定义保存位置，可通过环境变量指定：
+
+```bash
+AI_DAILY_NEWS_OUTPUT_DIR="/your/custom/path" ~/.claude/envs/ai-news-daily/bin/python ~/.claude/skills/ai-news-daily/scripts/main.py
+```
 
 ## 🛠️ 自定义配置 (Configuration)
 
