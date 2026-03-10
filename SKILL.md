@@ -32,3 +32,8 @@ AI_DAILY_NEWS_OUTPUT_DIR="/your/custom/path" ~/.claude/envs/ai-news-daily/bin/py
 生成的 HTML 默认存放于: `~/Documents/ai-daily-news/AI_Daily_News_{YYYYMMDD}.html`
 
 如需分享给其他人使用，建议通过 `AI_DAILY_NEWS_OUTPUT_DIR` 环境变量指定自定义目录。
+
+### 4. 当前优化点
+- 强化纯 AI 过滤，减少游戏、汽车、泛财经等无关内容混入
+- 对泛科技媒体增加来源级阈值与标题黑名单规则
+- 优化分类优先级，优先区分政策投融资、具身智能、算力硬件与大模型新闻

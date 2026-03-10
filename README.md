@@ -56,7 +56,7 @@ AI_DAILY_NEWS_OUTPUT_DIR="/your/custom/path" ~/.claude/envs/ai-news-daily/bin/py
 
 ## 🛠️ 自定义配置 (Configuration)
 
-你可以随时打开仓库中的 `main.py`，找到 `source_matrix` 数组来增加或删减你个人的信息源：
+你可以随时打开仓库中的 `main.py`，找到 `source_matrix` 数组来增加或删减你个人的信息源，也可以调整来源级 `min_score` 与标题黑名单来进一步提纯：
 
 ```python
 source_matrix = [
