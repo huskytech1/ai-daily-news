@@ -4,7 +4,6 @@ import html
 import os
 import re
 import ssl
-import webbrowser
 from datetime import datetime, timedelta
 
 import feedparser
@@ -20,7 +19,9 @@ now_bj = datetime.now(beijing_tz)
 cutoff = now_bj - timedelta(hours=24)
 translator = GoogleTranslator(source="auto", target="zh-CN")
 
-DEFAULT_OUTPUT_DIR = os.path.join(os.path.expanduser("~"), "Documents", "ai-daily-news")
+DEFAULT_OUTPUT_DIR = os.path.join(
+    os.path.expanduser("~"), "my_project_area", "documents", "ai-daily-news"
+)
 MAX_ITEMS_PER_CATEGORY = 20
 
 PRIMARY_AI_KEYWORDS = {
@@ -130,6 +131,17 @@ NEGATIVE_KEYWORDS = {
     "销量",
     "财经",
     "大盘",
+    "手机",
+    "平板",
+    "笔记本",
+    "电视",
+    "家电",
+    "消费电子",
+    "相机",
+    "路由器",
+    "蓝牙耳机",
+    "智能手表",
+    "智能手环",
 }
 
 TITLE_NEGATIVE_KEYWORDS = {
@@ -251,8 +263,15 @@ def normalize_text(*parts):
     return " ".join(part for part in parts if part).lower()
 
 
+def keyword_matches(text, keyword):
+    if re.fullmatch(r"[a-z0-9][a-z0-9\s.+#-]*", keyword):
+        pattern = rf"(?<![a-z0-9]){re.escape(keyword)}(?![a-z0-9])"
+        return re.search(pattern, text) is not None
+    return keyword in text
+
+
 def has_any(text, keywords):
-    return any(keyword in text for keyword in keywords)
+    return any(keyword_matches(text, keyword) for keyword in keywords)
 
 
 def ai_relevance_score(title, summary):
@@ -319,8 +338,14 @@ def is_pure_ai_news(title, summary, strict=False, source_name="", min_score=None
         return False
     if should_exclude_story(title, summary):
         return False
+    # Require at least one explicit AI-domain signal before scoring.
+    content = normalize_text(title, summary)
+    if not has_any(
+        content, PRIMARY_AI_KEYWORDS | HARDWARE_KEYWORDS | EMBODIED_KEYWORDS
+    ):
+        return False
     score = ai_relevance_score(title, summary)
-    threshold = 3 if strict else 2
+    threshold = 4 if strict else 2
     if min_score is not None:
         threshold = max(threshold, min_score)
     if (
@@ -591,4 +616,3 @@ with open(output_path, "w", encoding="utf-8") as file:
     file.write(build_html(categories))
 
 print(f"📝 网页生成成功: {output_path}")
-webbrowser.open(f"file://{os.path.abspath(output_path)}")

@@ -1,5 +1,6 @@
 ---
 name: ai-news-daily
+version: 1.0.0
 description: 专门用于聚合全球最新 AI 行业资讯并生成【AI 日报】。生成完成后，会自动打开生成的 HTML 日报网页。当用户提到以下任何关键词时自动触发：AI 日报、AI 新闻、今日 AI、AI 动态、行业简报、AI 资讯、看看 AI、AI 行业动态、AI 简讯。本技能抓取外部媒体新闻，与总结个人工作历史的 daily-review 完全不是同一回事。
 github_url: https://github.com/huskytech1/ai-daily-news
 github_hash: bce70443a35e7ef8f99dd14992bc0709807db46b
@@ -7,7 +8,7 @@ github_hash: bce70443a35e7ef8f99dd14992bc0709807db46b
 
 # ai-news-daily
 
-## Workflow
+## Workflow（严格顺序）
 
 ### 1. 环境验证
 确保虚拟环境已就绪：
@@ -29,11 +30,11 @@ AI_DAILY_NEWS_OUTPUT_DIR="/your/custom/path" ~/.claude/envs/ai-news-daily/bin/py
 ```
 
 ### 3. 输出路径
-生成的 HTML 默认存放于: `~/Documents/ai-daily-news/AI_Daily_News_{YYYYMMDD}.html`
+生成的 HTML 默认存放于: `~/my_project_area/documents/ai-daily-news/AI_Daily_News_{YYYYMMDD}.html`
 
 如需分享给其他人使用，建议通过 `AI_DAILY_NEWS_OUTPUT_DIR` 环境变量指定自定义目录。
 
-### 4. 当前优化点
-- 强化纯 AI 过滤，减少游戏、汽车、泛财经等无关内容混入
-- 对泛科技媒体增加来源级阈值与标题黑名单规则
-- 优化分类优先级，优先区分政策投融资、具身智能、算力硬件与大模型新闻
+### 4. 交付要求
+- 默认输出当日 HTML 日报并提供最终文件路径。
+- 若用户指定输出目录，优先使用 `AI_DAILY_NEWS_OUTPUT_DIR`。
+- 若抓取失败，返回失败原因和建议重试方式（网络、依赖、源站不可达）。

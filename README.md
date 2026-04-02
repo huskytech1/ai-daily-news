@@ -1,4 +1,4 @@
-# AI Daily News (AI 24 小时日报生成器)
+# AI Daily News v1.0.0 (AI 24 小时日报生成器)
 
 ![Hero Banner](https://img.shields.io/badge/Claude-Skill-blue?style=for-the-badge&logo=anthropic)
 ![Python](https://img.shields.io/badge/Python-3.x-blue?style=for-the-badge&logo=python)
@@ -29,13 +29,13 @@
 
 1. **克隆此技能到本地 Claude Skills 目录：**
    ```bash
-   mkdir -p ~/.claude/skills/ai-daily-news
-   git clone https://github.com/huskytech1/ai-daily-news.git ~/.claude/skills/ai-daily-news
+   mkdir -p ~/.claude/skills/ai-news-daily
+   git clone https://github.com/huskytech1/ai-daily-news.git ~/.claude/skills/ai-news-daily
    ```
 2. **构建专属 Python 虚拟环境 (推荐)：**
    ```bash
-   python3 -m venv ~/.claude/envs/ai-daily-news
-   ~/.claude/envs/ai-daily-news/bin/pip install feedparser beautifulsoup4 requests pytz deep-translator
+   python3 -m venv ~/.claude/envs/ai-news-daily
+   ~/.claude/envs/ai-news-daily/bin/pip install feedparser beautifulsoup4 requests pytz deep-translator
    ```
 
 ## 💡 如何使用 (Usage)
@@ -46,7 +46,9 @@
 > *"看看过去 24 小时有什么 AI 新闻"*
 > *"生成 AI Daily News"*
 
-Claude 将在后台极速执行 `main.py`，并将生成的精美 HTML 文件保存至你的本地文档目录（默认：`~/Documents/ai-daily-news/`），点击即可在浏览器中阅读。
+Claude 将在后台极速执行 `scripts/main.py`，并将生成的精美 HTML 文件保存至你的本地文档目录（默认：`~/my_project_area/documents/ai-daily-news/`）。
+
+从 `v1.0.0` 开始，过滤器会对英文关键词使用单词边界匹配，避免把 `fail` 这类普通词误判成 `ai` 相关新闻。
 
 如需自定义保存位置，可通过环境变量指定：
 
@@ -56,7 +58,7 @@ AI_DAILY_NEWS_OUTPUT_DIR="/your/custom/path" ~/.claude/envs/ai-news-daily/bin/py
 
 ## 🛠️ 自定义配置 (Configuration)
 
-你可以随时打开仓库中的 `main.py`，找到 `source_matrix` 数组来增加或删减你个人的信息源，也可以调整来源级 `min_score` 与标题黑名单来进一步提纯：
+你可以随时打开仓库中的 `scripts/main.py`，找到 `source_matrix` 数组来增加或删减你个人的信息源，也可以调整来源级 `min_score` 与标题黑名单来进一步提纯：
 
 ```python
 source_matrix = [
