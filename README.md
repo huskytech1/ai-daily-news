@@ -1,4 +1,4 @@
-# AI Daily News v1.0.0 (AI 24 小时日报生成器)
+# AI Daily News v1.0.1 (AI 24 小时日报生成器)
 
 ![Hero Banner](https://img.shields.io/badge/Claude-Skill-blue?style=for-the-badge&logo=anthropic)
 ![Python](https://img.shields.io/badge/Python-3.x-blue?style=for-the-badge&logo=python)
@@ -48,7 +48,7 @@
 
 Claude 将在后台极速执行 `scripts/main.py`，并将生成的精美 HTML 文件保存至你的本地文档目录（默认：`~/my_project_area/documents/ai-daily-news/`）。
 
-从 `v1.0.0` 开始，过滤器会对英文关键词使用单词边界匹配，避免把 `fail` 这类普通词误判成 `ai` 相关新闻。
+从 `v1.0.1` 开始，过滤器会对英文关键词使用单词边界匹配，避免把 `fail` 这类普通词误判成 `ai` 相关新闻。
 
 如需自定义保存位置，可通过环境变量指定：
 
