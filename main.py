@@ -476,6 +476,7 @@ def build_html(categories):
         '    <script src="https://cdn.tailwindcss.com"></script>',
         "    <style>",
         "        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');",
+        "        :root { --page-width: 72rem; --page-gutter: clamp(0.9rem, 3vw, 1.5rem); --section-gap: clamp(2rem, 6vw, 3rem); --card-padding: clamp(1rem, 2vw, 1.25rem); --hero-title: clamp(1.9rem, 4vw, 2.5rem); }",
         "        html { scroll-behavior: smooth; }",
         "        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #f8fafc; }",
         "        .card-hover { transition: transform 0.2s ease, box-shadow 0.2s ease; border-left: 4px solid transparent; }",
@@ -483,16 +484,20 @@ def build_html(categories):
         "        .hide-scrollbar::-webkit-scrollbar { display: none; }",
         "        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }",
         "        .en-subtitle { color: #94a3b8; font-size: 0.75rem; margin-top: 2px; }",
+        "        .page-shell { width: min(100%, var(--page-width)); margin: 0 auto; padding: clamp(1rem, 3vw, 2rem) var(--page-gutter); }",
+        "        .nav-track { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }",
+        "        .meta-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }",
+        "        @media (max-width: 767px) { .nav-track { flex-wrap: nowrap; width: max-content; } }",
         "    </style>",
         "</head>",
         '<body class="text-slate-800 antialiased">',
-        '    <div class="max-w-4xl mx-auto px-4 py-8 relative">',
+        '    <div class="page-shell relative">',
         '        <header class="mb-6 text-center">',
-        '            <h1 class="text-3xl font-bold tracking-tight text-slate-900 mb-3">AI 行业 24 小时日报</h1>',
+        '            <h1 class="mb-3 text-[var(--hero-title)] font-bold tracking-tight text-slate-900">AI 行业 24 小时日报</h1>',
         f'            <div class="inline-flex items-center px-4 py-1.5 rounded-full bg-slate-900 text-white text-sm font-medium shadow-sm">北京时间: {now_bj.strftime("%Y年%m月%d日")}</div>',
         "        </header>",
         '        <nav class="sticky top-0 z-50 bg-[#f8fafc]/90 backdrop-blur-md py-4 mb-8 border-b border-slate-200 hide-scrollbar overflow-x-auto">',
-        '            <div class="flex flex-nowrap md:flex-wrap gap-2 justify-start md:justify-center min-w-max md:min-w-0 px-2">',
+        '            <div class="nav-track justify-start md:justify-center min-w-max md:min-w-0 px-2">',
         '                <button onclick="filterCategory(\'all\', this)" class="cat-btn active px-4 py-2 rounded-full text-sm font-semibold bg-blue-600 text-white shadow-sm transition-all whitespace-nowrap border border-transparent">🌟 全部动态</button>',
     ]
 
@@ -502,14 +507,16 @@ def build_html(categories):
                 f'<button onclick="filterCategory(\'{cat_data["id"]}\', this)" class="cat-btn px-4 py-2 rounded-full text-sm font-medium bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-all whitespace-nowrap shadow-sm">{cat_data["icon"]} {cat_name} <span class="ml-1 text-xs px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">{len(cat_data["items"])}</span></button>'
             )
 
-    html_parts.append('</div></nav><main class="space-y-12" id="news-container">')
+    html_parts.append(
+        '</div></nav><main class="space-y-[var(--section-gap)]" id="news-container">'
+    )
 
     for cat_name, cat_data in categories.items():
         items = cat_data["items"]
         if not items:
             continue
         html_parts.append(
-            f'<section id="{cat_data["id"]}" class="cat-section scroll-mt-24"><div class="flex items-center gap-3 mb-6"><span class="text-2xl">{cat_data["icon"]}</span><h2 class="text-2xl font-bold text-slate-800">{cat_name}</h2></div><div class="space-y-4 pl-2 border-l-2 border-slate-200">'
+            f'<section id="{cat_data["id"]}" class="cat-section scroll-mt-24"><div class="meta-row mb-6 gap-3"><div class="flex min-w-0 items-center gap-3"><span class="text-2xl">{cat_data["icon"]}</span><h2 class="truncate text-[clamp(1.3rem,2.8vw,1.5rem)] font-bold text-slate-800">{cat_name}</h2></div><span class="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">{len(items)} 条</span></div><div class="space-y-4 border-l-2 border-slate-200 pl-2">'
         )
         for idx, item in enumerate(items, 1):
             summary = item["summary"]

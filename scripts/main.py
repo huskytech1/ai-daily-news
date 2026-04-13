@@ -251,6 +251,7 @@ source_matrix = [
 
 results = []
 seen_keys = set()
+article_time_cache = {}
 
 
 def clean_html(raw_html):
@@ -302,6 +303,13 @@ def explicit_ai_signal_count(title, summary):
     return signals
 
 
+def has_explicit_ai_signal_in_title(title):
+    title_text = normalize_text(title)
+    return has_any(
+        title_text, PRIMARY_AI_KEYWORDS | HARDWARE_KEYWORDS | EMBODIED_KEYWORDS
+    )
+
+
 def should_exclude_story(title, summary):
     title_text = normalize_text(title)
     content = normalize_text(title, summary)
@@ -338,7 +346,6 @@ def is_pure_ai_news(title, summary, strict=False, source_name="", min_score=None
         return False
     if should_exclude_story(title, summary):
         return False
-    # Require at least one explicit AI-domain signal before scoring.
     content = normalize_text(title, summary)
     if not has_any(
         content, PRIMARY_AI_KEYWORDS | HARDWARE_KEYWORDS | EMBODIED_KEYWORDS
@@ -350,13 +357,13 @@ def is_pure_ai_news(title, summary, strict=False, source_name="", min_score=None
         threshold = max(threshold, min_score)
     if (
         source_name in REQUIRE_EXPLICIT_AI_SOURCES
-        and explicit_ai_signal_count(title, summary) == 0
+        and not has_explicit_ai_signal_in_title(title)
     ):
         return False
     return score >= threshold
 
 
-def summarize_text(summary, limit=120):
+def summarize_text(summary, limit=100):
     summary = clean_html(summary)
     if len(summary) <= limit:
         return summary
@@ -370,6 +377,38 @@ def translate_text(text):
         return translator.translate(text)
     except Exception:
         return text
+
+
+def fetch_aibase_article_datetime(link, headers=None):
+    if link in article_time_cache:
+        return article_time_cache[link]
+
+    request_headers = headers or {"User-Agent": "Mozilla/5.0"}
+    try:
+        res = requests.get(link, headers=request_headers, timeout=10)
+        soup = BeautifulSoup(res.text, "html.parser")
+        text = soup.get_text(" ", strip=True)
+        match = re.search(
+            r"发布时间\s*[:：]\s*(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})[号日]\s*(\d{1,2}):(\d{2})",
+            text,
+        )
+        if match:
+            dt_bj = beijing_tz.localize(
+                datetime(
+                    int(match.group(1)),
+                    int(match.group(2)),
+                    int(match.group(3)),
+                    int(match.group(4)),
+                    int(match.group(5)),
+                )
+            )
+            article_time_cache[link] = dt_bj
+            return dt_bj
+    except Exception:
+        pass
+
+    article_time_cache[link] = None
+    return None
 
 
 def add_result(config, title, link, dt_bj, summary):
@@ -394,7 +433,7 @@ def add_result(config, title, link, dt_bj, summary):
     if config["lang"] == "en":
         display_title = translate_text(display_title)
         if display_summary:
-            display_summary = summarize_text(translate_text(display_summary), limit=90)
+            display_summary = summarize_text(translate_text(display_summary), limit=100)
 
     results.append(
         {
@@ -473,6 +512,9 @@ def fetch_aibase(config):
                         dt_bj = beijing_tz.localize(
                             datetime.strptime(f"{now_bj.year}-{raw_time}", "%Y-%m-%d")
                         )
+            article_dt_bj = fetch_aibase_article_datetime(link, headers=headers)
+            if article_dt_bj is not None:
+                dt_bj = article_dt_bj
             add_result(config, title, link, dt_bj, summary)
     except Exception:
         pass
@@ -492,6 +534,13 @@ def classify_item(item):
 
 
 def build_html(categories):
+    total_items = sum(len(cat_data["items"]) for cat_data in categories.values())
+    active_categories = [
+        (cat_name, cat_data)
+        for cat_name, cat_data in categories.items()
+        if cat_data["items"]
+    ]
+
     html_parts = [
         "<!DOCTYPE html>",
         '<html lang="zh-CN">',
@@ -501,78 +550,118 @@ def build_html(categories):
         '    <script src="https://cdn.tailwindcss.com"></script>',
         "    <style>",
         "        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');",
+        "        :root { --page-gutter: clamp(0.9rem, 2.4vw, 2rem); --page-block: clamp(1rem, 3vw, 2rem); --panel-radius: clamp(1.1rem, 2vw, 1.75rem); --card-padding: clamp(0.9rem, 1.8vw, 1.15rem); --hero-padding: clamp(1.25rem, 3vw, 2.5rem); --hero-title: clamp(2rem, 4vw, 3.5rem); --hero-copy: clamp(0.95rem, 1.4vw, 1rem); --section-title: clamp(1rem, 1.5vw, 1.15rem); --content-max-width: 1960px; }",
         "        html { scroll-behavior: smooth; }",
-        "        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #f8fafc; }",
-        "        .card-hover { transition: transform 0.2s ease, box-shadow 0.2s ease; border-left: 4px solid transparent; }",
-        "        .card-hover:hover { transform: translateX(4px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); border-left-color: #3b82f6; }",
+        "        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: radial-gradient(circle at top, #eff6ff 0%, #f8fafc 32%, #eef2ff 100%); color: #0f172a; }",
+        "        .news-card { transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; }",
+        "        .news-card:hover { transform: translateY(-2px); box-shadow: 0 16px 40px -24px rgba(15, 23, 42, 0.35); border-color: rgba(59, 130, 246, 0.28); }",
         "        .hide-scrollbar::-webkit-scrollbar { display: none; }",
         "        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }",
-        "        .en-subtitle { color: #94a3b8; font-size: 0.75rem; margin-top: 2px; }",
+        "        .en-subtitle { color: #64748b; font-size: 0.75rem; margin-top: 2px; }",
+        "        .glass-panel { background: rgba(255, 255, 255, 0.78); backdrop-filter: blur(14px); }",
+        "        .page-shell { width: min(100%, var(--content-max-width)); margin: 0 auto; padding: var(--page-block) var(--page-gutter); }",
+        "        .hero-panel { padding: var(--hero-padding); border-radius: var(--panel-radius); }",
+        "        .hero-grid { display: grid; gap: clamp(1rem, 3vw, 2rem); grid-template-columns: minmax(0, 1.7fr) minmax(16rem, 0.95fr); align-items: stretch; }",
+        "        .hero-title { font-size: var(--hero-title); line-height: 1.02; }",
+        "        .hero-copy { font-size: var(--hero-copy); line-height: 1.7; }",
+        "        .stats-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(0.65rem, 1.2vw, 0.9rem); min-width: min(100%, 20rem); }",
+        "        .section-anchor { scroll-margin-top: 96px; }",
+        "        .news-title, .summary-compact { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }",
+        "        .news-title { -webkit-line-clamp: 2; }",
+        "        .summary-compact { -webkit-line-clamp: 2; }",
+        "        .nav-shell { top: clamp(0.35rem, 1vw, 0.75rem); }",
+        "        .nav-track { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }",
+        "        .category-grid { display: grid; gap: clamp(1rem, 2vw, 1.5rem); grid-template-columns: repeat(auto-fit, minmax(min(100%, 21rem), 1fr)); align-items: start; }",
+        "        .cat-panel { border-radius: var(--panel-radius); padding: clamp(0.9rem, 1.8vw, 1.1rem); min-width: 0; }",
+        "        .section-head { gap: clamp(0.65rem, 1.2vw, 0.9rem); }",
+        "        .section-title { font-size: var(--section-title); }",
+        "        .news-card { padding: var(--card-padding); min-width: 0; }",
+        "        .meta-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }",
+        "        .footer-panel { border-radius: calc(var(--panel-radius) + 0.2rem); }",
+        "        @media (max-width: 960px) { .hero-grid { grid-template-columns: 1fr; } }",
+        "        @media (max-width: 767px) { .nav-track { flex-wrap: nowrap; width: max-content; } .stats-grid { grid-template-columns: 1fr; } .section-anchor { scroll-margin-top: 84px; } }",
         "    </style>",
         "</head>",
-        '<body class="text-slate-800 antialiased">',
-        '    <div class="max-w-4xl mx-auto px-4 py-8 relative">',
-        '        <header class="mb-6 text-center">',
-        '            <h1 class="text-3xl font-bold tracking-tight text-slate-900 mb-3">AI 行业 24 小时日报</h1>',
-        f'            <div class="inline-flex items-center px-4 py-1.5 rounded-full bg-slate-900 text-white text-sm font-medium shadow-sm">北京时间: {now_bj.strftime("%Y年%m月%d日")}</div>',
+        '<body class="antialiased">',
+        '    <div class="page-shell">',
+        '        <header class="hero-panel relative overflow-hidden border border-white/70 bg-slate-950 text-white shadow-[0_30px_80px_-40px_rgba(15,23,42,0.8)]">',
+        '            <div class="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(96,165,250,0.35),_transparent_30%),radial-gradient(circle_at_bottom_left,_rgba(129,140,248,0.28),_transparent_35%)]"></div>',
+        '            <div class="relative">',
+        '                <div class="hero-grid">',
+        '                    <div class="flex max-w-3xl flex-col justify-center">',
+        '                        <div class="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium tracking-wide text-slate-200">AI Daily News</div>',
+        '                        <h1 class="hero-title mt-4 font-semibold tracking-tight">AI 行业 24 小时日报</h1>',
+        '                        <p class="hero-copy mt-4 max-w-2xl text-slate-300">按主题并列整理过去 24 小时的 AI 动态，减少门户噪音，优先保留真正与模型、算力、具身智能和行业趋势相关的内容。</p>',
+        "                    </div>",
+        '                    <div class="stats-grid">',
+        f'                        <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-3"><div class="text-xs text-slate-300">日期</div><div class="mt-1 text-sm font-semibold">{now_bj.strftime("%Y年%m月%d日")}</div></div>',
+        f'                        <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-3"><div class="text-xs text-slate-300">新闻条数</div><div class="mt-1 text-sm font-semibold">{total_items} 条</div></div>',
+        f'                        <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-3"><div class="text-xs text-slate-300">分类数</div><div class="mt-1 text-sm font-semibold">{len(active_categories)} 类</div></div>',
+        f'                        <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-3"><div class="text-xs text-slate-300">上次刷新时间</div><div class="mt-1 text-sm font-semibold">{now_bj.strftime("%Y-%m-%d %H:%M")}</div></div>',
+        "                    </div>",
+        "                </div>",
+        "            </div>",
         "        </header>",
-        '        <nav class="sticky top-0 z-50 bg-[#f8fafc]/90 backdrop-blur-md py-4 mb-8 border-b border-slate-200 hide-scrollbar overflow-x-auto">',
-        '            <div class="flex flex-nowrap md:flex-wrap gap-2 justify-start md:justify-center min-w-max md:min-w-0 px-2">',
-        '                <button onclick="filterCategory(\'all\', this)" class="cat-btn active px-4 py-2 rounded-full text-sm font-semibold bg-blue-600 text-white shadow-sm transition-all whitespace-nowrap border border-transparent">🌟 全部动态</button>',
+        '        <nav class="nav-shell sticky z-50 mt-6 mb-8 overflow-x-auto rounded-2xl border border-white/70 glass-panel px-3 py-3 shadow-sm hide-scrollbar">',
+        '            <div class="nav-track">',
+        '                <button onclick="filterCategory(\'all\', this)" class="cat-btn active rounded-full border border-transparent bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all whitespace-nowrap">全部分类</button>',
     ]
 
-    for cat_name, cat_data in categories.items():
-        if cat_data["items"]:
-            html_parts.append(
-                f'<button onclick="filterCategory(\'{cat_data["id"]}\', this)" class="cat-btn px-4 py-2 rounded-full text-sm font-medium bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 transition-all whitespace-nowrap shadow-sm">{cat_data["icon"]} {cat_name} <span class="ml-1 text-xs px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">{len(cat_data["items"])}</span></button>'
-            )
-
-    html_parts.append('</div></nav><main class="space-y-12" id="news-container">')
-
-    for cat_name, cat_data in categories.items():
-        items = cat_data["items"]
-        if not items:
-            continue
+    for cat_name, cat_data in active_categories:
         html_parts.append(
-            f'<section id="{cat_data["id"]}" class="cat-section scroll-mt-24"><div class="flex items-center gap-3 mb-6"><span class="text-2xl">{cat_data["icon"]}</span><h2 class="text-2xl font-bold text-slate-800">{cat_name}</h2></div><div class="space-y-4 pl-2 border-l-2 border-slate-200">'
+            f'<button onclick="filterCategory(\'{cat_data["id"]}\', this)" class="cat-btn rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition-all whitespace-nowrap hover:border-slate-300 hover:bg-slate-50">{cat_data["icon"]} {cat_name} <span class="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">{len(cat_data["items"])} </span></button>'
         )
+
+    html_parts.append(
+        f'</div></nav><main id="news-container"><div class="category-grid">'
+    )
+
+    for cat_name, cat_data in active_categories:
+        items = cat_data["items"]
+        html_parts.append(
+            f'<section id="{cat_data["id"]}" class="cat-section cat-panel section-anchor flex h-full flex-col border border-white/70 glass-panel shadow-[0_20px_60px_-45px_rgba(15,23,42,0.65)]">'
+        )
+        html_parts.append(
+            f'<div class="section-head mb-4 flex items-center"><span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-lg text-white shadow-sm">{cat_data["icon"]}</span><div class="min-w-0 flex-1"><div class="meta-row"><h2 class="section-title truncate font-semibold tracking-tight text-slate-900">{cat_name}</h2><span class="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">{len(items)} 条</span></div><p class="mt-1 text-xs text-slate-500">精选动态</p></div></div>'
+        )
+        html_parts.append('<div class="flex flex-1 flex-col gap-3">')
         for idx, item in enumerate(items, 1):
             summary = item["summary"]
             if summary.startswith("IT之家"):
                 summary = summary.split("消息，", 1)[-1].strip()
             subtitle_html = (
-                f'<div class="en-subtitle font-mono truncate">{html.escape(item["original_title"])}</div>'
+                f'<div class="en-subtitle font-mono truncate">{html.escape(item["original_title"])} </div>'
                 if item.get("original_title")
                 else ""
             )
             html_parts.append(
-                f'<article class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 card-hover relative group"><div class="absolute -left-3.5 top-5 w-7 h-7 bg-slate-800 text-white rounded-full flex items-center justify-center text-sm font-bold shadow-sm ring-4 ring-[#f8fafc] group-hover:bg-blue-600 transition-colors">{idx}</div><div class="ml-6 flex flex-col gap-2"><div class="flex items-center justify-between"><span class="px-2.5 py-1 bg-slate-100 text-slate-600 text-xs font-semibold rounded-md">{html.escape(item["source"])}</span><time class="text-sm text-slate-400 font-medium">{html.escape(item["time"])}</time></div><h3 class="text-lg font-bold leading-snug"><a href="{html.escape(item["link"])}" target="_blank" class="hover:text-blue-600 transition-colors">{html.escape(item["title"])}</a></h3>{subtitle_html}<p class="text-slate-500 leading-relaxed text-sm mt-1">{html.escape(summary)}</p></div></article>'
+                f'<article class="news-card rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm"><div class="flex items-start gap-3"><div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-sm font-semibold text-slate-700">{idx}</div><div class="flex min-w-0 flex-1 flex-col"><div class="meta-row text-[11px]"><span class="truncate rounded-full bg-blue-50 px-2.5 py-1 font-medium text-blue-700">{html.escape(item["source"])} </span><time class="shrink-0 text-slate-400">{html.escape(item["time"])} </time></div><h3 class="news-title mt-3 text-[clamp(0.98rem,1.6vw,1rem)] font-semibold leading-6 text-slate-900"><a href="{html.escape(item["link"])}" target="_blank" class="transition-colors hover:text-blue-600">{html.escape(item["title"])} </a></h3>{subtitle_html}<p class="summary-compact mt-2 text-[13px] leading-5 text-slate-600">{html.escape(summary)}</p></div></div></article>'
             )
         html_parts.append("</div></section>")
 
     html_parts.extend(
         [
-            "</main>",
-            '        <footer class="mt-16 text-center text-sm text-slate-400 border-t border-slate-200 pt-8 pb-12">由 Claude (AI News Skill) 自动化聚合生成 · 纯 AI 过滤优化版 · 海外资讯双语翻译</footer>',
+            "</div></main>",
+            '        <footer class="footer-panel mt-10 border border-white/70 glass-panel px-6 py-5 text-center text-sm text-slate-500 shadow-sm">由 Claude (AI News Skill) 自动化聚合生成 · 按主题分栏展示 · 海外资讯双语翻译</footer>',
             "    </div>",
             "    <script>",
             "        function filterCategory(catId, btnElement) {",
             "            document.querySelectorAll('.cat-btn').forEach(btn => {",
-            "                btn.classList.remove('bg-blue-600', 'text-white', 'border-transparent', 'font-semibold');",
+            "                btn.classList.remove('bg-slate-950', 'text-white', 'border-transparent', 'font-semibold');",
             "                btn.classList.add('bg-white', 'text-slate-600', 'border-slate-200', 'font-medium');",
             "            });",
             "            btnElement.classList.remove('bg-white', 'text-slate-600', 'border-slate-200', 'font-medium');",
-            "            btnElement.classList.add('bg-blue-600', 'text-white', 'border-transparent', 'font-semibold');",
+            "            btnElement.classList.add('bg-slate-950', 'text-white', 'border-transparent', 'font-semibold');",
             "            document.querySelectorAll('.cat-section').forEach(sec => {",
             "                if (catId === 'all' || sec.id === catId) {",
-            "                    sec.style.display = 'block';",
+            "                    sec.style.display = 'flex';",
             "                    sec.style.opacity = '0';",
             "                    setTimeout(() => { sec.style.transition = 'opacity 0.3s ease'; sec.style.opacity = '1'; }, 10);",
             "                } else {",
             "                    sec.style.display = 'none';",
             "                }",
             "            });",
-            "            if (catId !== 'all') { window.scrollTo({ top: 0, behavior: 'smooth' }); }",
+            "            if (catId !== 'all') { document.getElementById(catId).scrollIntoView({ behavior: 'smooth', block: 'start' }); }",
             "        }",
             "    </script>",
             "</body>",
