@@ -1,4 +1,4 @@
-# AI Daily News v1.0.1 (AI 24 小时日报生成器)
+# AI Daily News v1.0.2 (AI 24 小时日报生成器)
 
 ![Hero Banner](https://img.shields.io/badge/Claude-Skill-blue?style=for-the-badge&logo=anthropic)
 ![Python](https://img.shields.io/badge/Python-3.x-blue?style=for-the-badge&logo=python)
@@ -22,6 +22,7 @@
 *   **优美的生成式 UI**
     *   不依赖任何后端，纯本地生成嵌入式 Tailwind CSS 单页 HTML。
     *   带有吸顶交互式导航（Sticky Nav），自动将海量资讯归入：🤖 大模型与前沿技术 / 💻 AI 算力与硬件 / 🦾 具身智能与终端 / 📈 政策与投融资。
+    *   页面支持桌面、平板、手机以及浏览器自由缩放窗口下的自适应布局。
 
 ## 🚀 安装指南 (Installation)
 
