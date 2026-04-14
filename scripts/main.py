@@ -4,6 +4,7 @@ import html
 import os
 import re
 import ssl
+import threading
 from datetime import datetime, timedelta
 
 import feedparser
@@ -23,6 +24,63 @@ DEFAULT_OUTPUT_DIR = os.path.join(
     os.path.expanduser("~"), "my_project_area", "documents", "ai-daily-news"
 )
 MAX_ITEMS_PER_CATEGORY = 20
+
+SOURCE_PRIORITY = {
+    "TechCrunch AI": 10,
+    "VentureBeat AI": 9,
+    "The Verge": 9,
+    "Ars Technica": 8,
+    "机器之心": 8,
+    "IT之家": 7,
+    "36Kr AI": 7,
+    "AI News": 6,
+    "MarkTechPost": 5,
+    "AIbase": 3,
+}
+
+COMMON_ENTITY_TOKENS = {
+    "ai",
+    "openai",
+    "anthropic",
+    "claude",
+    "gemini",
+    "gpt",
+    "llm",
+    "chatgpt",
+    "deepseek",
+    "qwen",
+    "kimi",
+    "llama",
+    "copilot",
+    "agent",
+    "agents",
+}
+
+GENERIC_SIMILARITY_WORDS = {
+    "收购",
+    "吞并",
+    "融资",
+    "募资",
+    "投资",
+    "发布",
+    "推出",
+    "启动",
+    "升级",
+    "计划",
+    "能力",
+    "人才",
+    "初创公司",
+    "公司",
+    "工具",
+    "模型",
+    "金融",
+    "理财",
+    "财务",
+    "提升",
+    "专注",
+    "实质",
+    "模式",
+}
 
 PRIMARY_AI_KEYWORDS = {
     "人工智能",
@@ -150,6 +208,10 @@ TITLE_NEGATIVE_KEYWORDS = {
     "geforce",
     "玩家",
     "游戏",
+    "早报",
+    "晚报",
+    "日报",
+    "周报",
     "suv",
     "轿跑",
     "新车",
@@ -160,8 +222,20 @@ TITLE_NEGATIVE_KEYWORDS = {
 REQUIRE_EXPLICIT_AI_SOURCES = {"IT之家", "36Kr AI", "The Verge", "Ars Technica"}
 
 SOURCE_TITLE_BLACKLIST = {
-    "IT之家": {"suv", "轿跑", "dlss", "游戏", "首发", "新车", "玩家"},
-    "36Kr AI": {"盘前", "股价", "航班", "晚报", "收盘", "开盘"},
+    "IT之家": {
+        "suv",
+        "轿跑",
+        "dlss",
+        "游戏",
+        "首发",
+        "新车",
+        "玩家",
+        "早报",
+        "晚报",
+        "日报",
+        "周报",
+    },
+    "36Kr AI": {"盘前", "股价", "航班", "晚报", "收盘", "开盘", "早报", "日报", "周报"},
     "The Verge": {"gaming", "game", "dlss", "playstation", "xbox"},
     "Ars Technica": {"gaming", "game", "dlss", "gpu review"},
 }
@@ -252,6 +326,7 @@ source_matrix = [
 results = []
 seen_keys = set()
 article_time_cache = {}
+results_lock = threading.Lock()
 
 
 def clean_html(raw_html):
@@ -262,6 +337,133 @@ def clean_html(raw_html):
 
 def normalize_text(*parts):
     return " ".join(part for part in parts if part).lower()
+
+
+def tokenize_ascii(text):
+    return {
+        token
+        for token in re.findall(r"[a-z0-9][a-z0-9.+#-]{1,}", text.lower())
+        if len(token) >= 2
+    }
+
+
+def tokenize_cjk_ngrams(text):
+    normalized = re.sub(r"\s+", "", text)
+    chunks = re.findall(r"[\u4e00-\u9fff]{2,}", normalized)
+    grams = set()
+    for chunk in chunks:
+        upper = min(len(chunk), 12)
+        for size in (2, 3):
+            if upper < size:
+                continue
+            for idx in range(0, upper - size + 1):
+                gram = chunk[idx : idx + size]
+                if gram not in GENERIC_SIMILARITY_WORDS:
+                    grams.add(gram)
+    return grams
+
+
+def build_similarity_signature(title, summary):
+    title_text = clean_html(title)
+    summary_text = clean_html(summary)[:180]
+    content_text = normalize_text(title_text, summary_text)
+    title_tokens = tokenize_ascii(title_text) | tokenize_cjk_ngrams(title_text)
+    body_tokens = (
+        title_tokens | tokenize_ascii(summary_text) | tokenize_cjk_ngrams(summary_text)
+    )
+    strong_tokens = {
+        token
+        for token in body_tokens
+        if len(token) >= 4
+        and token not in COMMON_ENTITY_TOKENS
+        and token not in GENERIC_SIMILARITY_WORDS
+    }
+    actor_tokens = {
+        token for token in COMMON_ENTITY_TOKENS if keyword_matches(content_text, token)
+    }
+    policy_tokens = {
+        token for token in POLICY_KEYWORDS if keyword_matches(content_text, token)
+    }
+    return {
+        "title_tokens": title_tokens,
+        "body_tokens": body_tokens,
+        "strong_tokens": strong_tokens,
+        "actor_tokens": actor_tokens,
+        "policy_tokens": policy_tokens,
+    }
+
+
+def jaccard_similarity(left, right):
+    if not left or not right:
+        return 0.0
+    union = left | right
+    if not union:
+        return 0.0
+    return len(left & right) / len(union)
+
+
+def compute_item_value(item):
+    age_hours = max(0.0, (now_bj.timestamp() - item["timestamp"]) / 3600)
+    freshness_bonus = max(0.0, 6.0 - min(age_hours, 6.0))
+    summary_bonus = min(len(item["summary"]), 140) / 28
+    strong_bonus = min(len(item["signature"]["strong_tokens"]), 4)
+    return (
+        SOURCE_PRIORITY.get(item["source"], 4) * 10
+        + item["relevance_score"] * 4
+        + freshness_bonus
+        + summary_bonus
+        + strong_bonus
+    )
+
+
+def are_likely_duplicates(left, right):
+    shared_strong_tokens = (
+        left["signature"]["strong_tokens"] & right["signature"]["strong_tokens"]
+    )
+    shared_actor_tokens = (
+        left["signature"]["actor_tokens"] & right["signature"]["actor_tokens"]
+    )
+    shared_policy_tokens = (
+        left["signature"]["policy_tokens"] & right["signature"]["policy_tokens"]
+    )
+    title_similarity = jaccard_similarity(
+        left["signature"]["title_tokens"], right["signature"]["title_tokens"]
+    )
+    body_similarity = jaccard_similarity(
+        left["signature"]["body_tokens"], right["signature"]["body_tokens"]
+    )
+    if (
+        shared_actor_tokens
+        and shared_strong_tokens
+        and (shared_policy_tokens or body_similarity >= 0.18)
+    ):
+        return True
+    if len(shared_strong_tokens) >= 2 and (
+        title_similarity >= 0.16 or body_similarity >= 0.16
+    ):
+        return True
+    if (
+        len(shared_strong_tokens) >= 1
+        and title_similarity >= 0.38
+        and body_similarity >= 0.22
+    ):
+        return True
+    if body_similarity >= 0.68:
+        return True
+    return False
+
+
+def deduplicate_results(items):
+    selected = []
+    for item in sorted(
+        items,
+        key=lambda current: (current["value_score"], current["timestamp"]),
+        reverse=True,
+    ):
+        if any(are_likely_duplicates(item, existing) for existing in selected):
+            continue
+        selected.append(item)
+    return selected
 
 
 def keyword_matches(text, keyword):
@@ -413,9 +615,7 @@ def fetch_aibase_article_datetime(link, headers=None):
 
 def add_result(config, title, link, dt_bj, summary):
     normalized_title = re.sub(r"\s+", " ", title).strip()
-    unique_key = (normalized_title.lower(), link)
-    if unique_key in seen_keys:
-        return
+    unique_key = link.strip().lower()
     if not is_pure_ai_news(
         title,
         summary,
@@ -427,7 +627,11 @@ def add_result(config, title, link, dt_bj, summary):
     if dt_bj < cutoff or dt_bj > now_bj + timedelta(hours=2):
         return
 
-    seen_keys.add(unique_key)
+    with results_lock:
+        if unique_key in seen_keys:
+            return
+        seen_keys.add(unique_key)
+
     display_title = normalized_title
     display_summary = summarize_text(summary)
     if config["lang"] == "en":
@@ -435,17 +639,23 @@ def add_result(config, title, link, dt_bj, summary):
         if display_summary:
             display_summary = summarize_text(translate_text(display_summary), limit=100)
 
-    results.append(
-        {
-            "source": config["name"],
-            "title": display_title,
-            "original_title": normalized_title if config["lang"] == "en" else "",
-            "link": link,
-            "time": dt_bj.strftime("%Y-%m-%d %H:%M"),
-            "timestamp": dt_bj.timestamp(),
-            "summary": display_summary,
-        }
-    )
+    relevance_score = ai_relevance_score(title, summary)
+    signature = build_similarity_signature(display_title, display_summary or summary)
+    item = {
+        "source": config["name"],
+        "title": display_title,
+        "original_title": normalized_title if config["lang"] == "en" else "",
+        "link": link,
+        "time": dt_bj.strftime("%Y-%m-%d %H:%M"),
+        "timestamp": dt_bj.timestamp(),
+        "summary": display_summary,
+        "relevance_score": relevance_score,
+        "signature": signature,
+    }
+    item["value_score"] = compute_item_value(item)
+
+    with results_lock:
+        results.append(item)
 
 
 def fetch_rss(config):
@@ -679,7 +889,8 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         elif source["type"] == "custom_aibase":
             executor.submit(fetch_aibase, source)
 
-results.sort(key=lambda item: item["timestamp"], reverse=True)
+results = deduplicate_results(results)
+results.sort(key=lambda item: (item["value_score"], item["timestamp"]), reverse=True)
 print(f"✅ Extracted {len(results)} PURE AI news items after applying strict filter.")
 
 categories = {
