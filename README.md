@@ -1,79 +1,98 @@
-# AI Daily News v1.0.3 (AI 24 小时日报生成器)
+# AI Daily News v1.0.6
 
-![Hero Banner](https://img.shields.io/badge/Claude-Skill-blue?style=for-the-badge&logo=anthropic)
+![Claude Skill](https://img.shields.io/badge/Codex-Skill-19c8b9?style=for-the-badge)
 ![Python](https://img.shields.io/badge/Python-3.x-blue?style=for-the-badge&logo=python)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
-一个专为极客与 AI 从业者打造的 **Claude 桌面自动化 Skill**。全自动并发抓取全球 10 大顶尖 AI 媒体与科技门户，运用二维语义算法进行高纯度降噪，最终生成一份按领域自动分类、包含中文双语对照的优美本地 HTML 日报。
+一个用于聚合过去 24 小时 AI 新闻并生成本地 HTML 日报的桌面 Skill。它会并发抓取多家中英文媒体，做 AI 相关性过滤、事件级去重、综合排序，然后输出可直接浏览的日报页面。
 
-## 🌟 核心特性 (Features)
+## 特性
 
-*   **10 大媒体火力网并行抓取**
-    *   **国内硬核：** 机器之心、AIbase
-    *   **国内门户：** IT之家、36Kr
-    *   **海外顶尖：** TechCrunch AI、The Verge、VentureBeat AI、AI News、MarkTechPost、Ars Technica
-*   **高纯度“二维语义”降噪算法**
-    *   绝不放过任何一条带有 `大模型`、`Agent`、`GPU集群` 的硬核资讯。
-    *   精准剔除泛科技媒体中“Google 反垄断败诉”、“苹果发布新表带”等**非 AI 的大厂花边新闻**。
-*   **绝对零时差过滤**
-    *   自动解析所有来源复杂的 UTC 或相对时间，精准换算至北京时间，**严格剔除超过 24 小时的旧闻**。
-*   **无感中文化 (Auto Translation)**
-    *   挂载轻量级翻译引擎，将海外一手资讯自动翻译，生成“中文主标题 + 英文原标题”的双语沉浸式阅读卡片。
-*   **优美的生成式 UI**
-    *   不依赖任何后端，纯本地生成嵌入式 Tailwind CSS 单页 HTML。
-    *   带有吸顶交互式导航（Sticky Nav），自动将海量资讯归入：🤖 大模型与前沿技术 / 💻 AI 算力与硬件 / 🦾 具身智能与终端 / 📈 政策与投融资。
-    *   页面支持桌面、平板、手机以及浏览器自由缩放窗口下的自适应布局。
+- 多源抓取：国内外 AI/科技媒体并发抓取。
+- 事件级去重：同题转载会合并，同企业不同事件会保留。
+- 混合排序：按新闻级别、时效、信源可信度、行业影响面、独特性综合排序。
+- 双语信息：英文来源保留中文标题和英文原标题。
+- 本地静态输出：直接生成单文件 HTML，无需后端。
+- 自适应页面：适配桌面和移动端浏览。
 
-## 🚀 安装指南 (Installation)
+## 当前信源
 
-本工具设计为标准的 **Claude 桌面端 Skill** 运行。
+- 机器之心
+- AIbase
+- TechCrunch AI
+- VentureBeat AI
+- AI News
+- MarkTechPost
+- IT之家
+- 36Kr AI
 
-1. **克隆此技能到本地 Claude Skills 目录：**
-   ```bash
-   mkdir -p ~/.claude/skills/ai-news-daily
-   git clone https://github.com/huskytech1/ai-daily-news.git ~/.claude/skills/ai-news-daily
-   ```
-2. **构建专属 Python 虚拟环境 (推荐)：**
-   ```bash
-   python3 -m venv ~/.claude/envs/ai-news-daily
-   ~/.claude/envs/ai-news-daily/bin/pip install feedparser beautifulsoup4 requests pytz deep-translator
-   ```
+## 排序规则
 
-## 💡 如何使用 (Usage)
+日报不是纯时间流，当前采用混合评分：
 
-在 Claude 桌面端对话框中，直接对 Agent 说出指令即可触发：
+- 新闻级别 35
+- 时效 25
+- 信源可信度 20
+- 行业影响面 10
+- 独特性 10
 
-> *"帮我整理今天的 AI 日报"*
-> *"看看过去 24 小时有什么 AI 新闻"*
-> *"生成 AI Daily News"*
+补充规则：
 
-Claude 将在后台极速执行 `scripts/main.py`，并将生成的精美 HTML 文件保存至你的本地文档目录（默认：`~/my_project_area/documents/ai-daily-news/`）。
+- 先做事件级去重，再排序。
+- 同一企业不会仅因名字相同被判重。
+- 同一栏目内限制同一企业连续出现不超过 2 条，避免版面被单一公司占满。
 
-从 `v1.0.1` 开始，过滤器会对英文关键词使用单词边界匹配，避免把 `fail` 这类普通词误判成 `ai` 相关新闻。
-
-从当前版本开始，`IT之家`、`36Kr AI`、`The Verge`、`Ars Technica` 这类泛科技来源会额外要求标题本身带有明确 AI 领域信号，避免把“早报 / 晚报 / 产品上市稿”这类正文里夹带 AI 词的泛科技新闻误收进日报。
-
-从 `v1.0.3` 开始，日报会先对候选新闻做事件级去重，再按来源质量、AI 相关度、摘要信息量和时效性综合排序。同一事件若被多个来源反复改写，只保留更值得阅读的一条；同时会额外过滤“早报 / 晚报 / 日报 / 周报”这类汇编稿，减少低价值占位。
-
-如需自定义保存位置，可通过环境变量指定：
+## 安装
 
 ```bash
-AI_DAILY_NEWS_OUTPUT_DIR="/your/custom/path" ~/.claude/envs/ai-news-daily/bin/python ~/.claude/skills/ai-news-daily/scripts/main.py
+mkdir -p "$HOME/.codex/skills"
+git clone https://github.com/huskytech1/ai-daily-news.git "$HOME/.codex/skills/ai-news-daily"
+
+python3 -m venv "$HOME/.codex/envs/ai-news-daily"
+"$HOME/.codex/envs/ai-news-daily/bin/pip" install feedparser beautifulsoup4 requests pytz deep-translator
 ```
 
-## 🛠️ 自定义配置 (Configuration)
+## 使用
 
-你可以随时打开仓库中的 `scripts/main.py`，找到 `source_matrix` 数组来增加或删减你个人的信息源，也可以调整来源级 `min_score` 与标题黑名单来进一步提纯：
-
-```python
-source_matrix = [
-    # type: "rss" (标准订阅源) 或 "custom_aibase" (特定 DOM 解析)
-    # lang: "en" (触发自动翻译) 或 "zh"
-    # strict_filter: True (启动高纯度 AI 词汇校验，过滤花边新闻)
-    {"name": "机器之心", "type": "rss", "lang": "zh", "url": "https://www.jiqizhixin.com/rss", "strict_filter": False},
-    # ... 在此处添加你的专属 RSS 链接 ...
-]
+```bash
+"$HOME/.codex/envs/ai-news-daily/bin/python" "$HOME/.codex/skills/ai-news-daily/scripts/main.py"
 ```
 
-## 📜 许可证 (License)
-MIT License. 自由使用与修改。
+自定义输出目录：
+
+```bash
+AI_DAILY_NEWS_OUTPUT_DIR="/your/custom/path" \
+  "$HOME/.codex/envs/ai-news-daily/bin/python" \
+  "$HOME/.codex/skills/ai-news-daily/scripts/main.py"
+```
+
+默认输出目录：
+
+```text
+~/Documents/ai-news-daily/AI_Daily_News_{YYYYMMDD}.html
+```
+
+## 版本更新
+
+### v1.0.6
+
+- 引入媒体化混合排序，替代简单信源优先排序。
+- 优化事件级去重，避免同企业不同新闻被误合并。
+- 增加栏目内同企业连续占位限制。
+- 更新日报页面主题和导航布局。
+- 默认输出目录改为 `~/Documents/ai-news-daily/`。
+- 清理 README 和 Skill 文档中的本地环境痕迹。
+
+### v1.0.5
+
+- 页面改为暖色动森风格。
+- 优化分类导航和 Hero 区布局。
+
+### v1.0.3
+
+- 增加事件级去重。
+- 增加泛科技来源的 AI 明确信号过滤。
+
+## 许可证
+
+MIT

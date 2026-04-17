@@ -5,6 +5,7 @@ import os
 import re
 import ssl
 import threading
+from difflib import SequenceMatcher
 from datetime import datetime, timedelta
 
 import feedparser
@@ -21,9 +22,10 @@ cutoff = now_bj - timedelta(hours=24)
 translator = GoogleTranslator(source="auto", target="zh-CN")
 
 DEFAULT_OUTPUT_DIR = os.path.join(
-    os.path.expanduser("~"), "my_project_area", "documents", "ai-daily-news"
+    os.path.expanduser("~"), "Documents", "ai-daily-news"
 )
 MAX_ITEMS_PER_CATEGORY = 20
+MAX_CONSECUTIVE_SAME_ACTOR = 2
 
 SOURCE_PRIORITY = {
     "TechCrunch AI": 10,
@@ -36,6 +38,78 @@ SOURCE_PRIORITY = {
     "AI News": 6,
     "MarkTechPost": 5,
     "AIbase": 3,
+}
+
+SOURCE_CREDIBILITY = {
+    "TechCrunch AI": 9.5,
+    "VentureBeat AI": 9.0,
+    "The Verge": 8.5,
+    "Ars Technica": 8.5,
+    "机器之心": 8.0,
+    "IT之家": 7.0,
+    "36Kr AI": 7.0,
+    "AI News": 6.5,
+    "MarkTechPost": 6.0,
+    "AIbase": 5.0,
+}
+
+TOP_TIER_ACTORS = {
+    "openai",
+    "google",
+    "deepmind",
+    "anthropic",
+    "meta",
+    "microsoft",
+    "nvidia",
+    "amazon",
+    "xai",
+    "deepseek",
+    "alibaba",
+    "baidu",
+    "tencent",
+    "qwen",
+    "claude",
+    "gemini",
+    "gpt",
+}
+
+MAJOR_EVENT_KEYWORDS = {
+    "发布",
+    "推出",
+    "上线",
+    "收购",
+    "融资",
+    "募资",
+    "投资",
+    "并购",
+    "监管",
+    "法案",
+    "法规",
+    "财报",
+    "ipo",
+    "合作",
+    "开发",
+}
+
+STRATEGIC_PRODUCT_KEYWORDS = {
+    "gpt",
+    "claude",
+    "gemini",
+    "codex",
+    "copilot",
+    "qwen",
+    "llama",
+    "rosalind",
+    "veo",
+    "sora",
+    "midjourney",
+    "agent",
+    "sdk",
+    "api",
+    "芯片",
+    "gpu",
+    "机器人",
+    "眼镜",
 }
 
 COMMON_ENTITY_TOKENS = {
@@ -54,6 +128,21 @@ COMMON_ENTITY_TOKENS = {
     "copilot",
     "agent",
     "agents",
+    "microsoft",
+    "google",
+    "meta",
+    "amazon",
+    "aws",
+    "xai",
+    "baidu",
+    "alibaba",
+    "tencent",
+    "zhipu",
+    "bytedance",
+    "nvidia",
+    "tesla",
+    "perplexity",
+    "mistral",
 }
 
 GENERIC_SIMILARITY_WORDS = {
@@ -80,6 +169,152 @@ GENERIC_SIMILARITY_WORDS = {
     "专注",
     "实质",
     "模式",
+}
+
+ENTITY_ALIASES = {
+    "microsoft 365 copilot": "copilot",
+    "365 copilot": "copilot",
+    "microsoft": "microsoft",
+    "msft": "microsoft",
+    "微软": "microsoft",
+    "google": "google",
+    "alphabet": "google",
+    "谷歌": "google",
+    "meta": "meta",
+    "facebook": "meta",
+    "脸书": "meta",
+    "亚马逊": "amazon",
+    "amazon": "amazon",
+    "aws": "amazon",
+    "苹果": "apple",
+    "apple": "apple",
+    "英伟达": "nvidia",
+    "nvidia": "nvidia",
+    "amd": "amd",
+    "openai": "openai",
+    "anthropic": "anthropic",
+    "claude": "claude",
+    "谷歌 deepmind": "deepmind",
+    "google deepmind": "deepmind",
+    "deepmind": "deepmind",
+    "google photos": "googlephotos",
+    "google photo": "googlephotos",
+    "谷歌相册": "googlephotos",
+    "个人相册": "googlephotos",
+    "xai": "xai",
+    "grok": "grok",
+    "马斯克": "xai",
+    "特斯拉": "tesla",
+    "tesla": "tesla",
+    "deepseek": "deepseek",
+    "深度求索": "deepseek",
+    "通义": "qwen",
+    "qwen": "qwen",
+    "阿里": "alibaba",
+    "阿里巴巴": "alibaba",
+    "alibaba": "alibaba",
+    "腾讯": "tencent",
+    "tencent": "tencent",
+    "混元": "hunyuan",
+    "hunyuan": "hunyuan",
+    "百度": "baidu",
+    "baidu": "baidu",
+    "文心": "ernie",
+    "ernie": "ernie",
+    "智谱": "zhipu",
+    "z.ai": "zhipu",
+    "glm": "glm",
+    "字节跳动": "bytedance",
+    "豆包": "doubao",
+    "bytedance": "bytedance",
+    "perplexity": "perplexity",
+    "mistral": "mistral",
+    "hugging face": "huggingface",
+    "huggingface": "huggingface",
+}
+
+MATCH_REPLACEMENTS = (
+    ("智能体", "agent"),
+    ("代理", "agent"),
+    ("agents", "agent"),
+    ("agentic", "agent"),
+    ("研发", "开发"),
+    ("打造", "开发"),
+    ("发布了", "发布"),
+    ("推出了", "发布"),
+    ("上线", "发布"),
+    ("面向", "针对"),
+    ("整合进", "整合"),
+    ("接入", "整合"),
+    ("收购了", "收购"),
+    ("买下", "收购"),
+    ("类似", "类"),
+    ("药物发现", "lifescience"),
+    ("生命科学", "lifescience"),
+    ("基因组学", "lifescience"),
+    ("制药", "lifescience"),
+    ("生物学", "lifescience"),
+)
+
+TITLE_NOISE_PATTERNS = (
+    r"^(最前线|硬氪专访|硬氪|独家|快讯|观察|深度|焦点|专访)\s*[|｜:：-]\s*",
+    r"\s*[|｜]\s*(最前线|硬氪专访|硬氪|独家|快讯|观察|深度|焦点|专访)$",
+)
+
+EVENT_STOPWORDS = {
+    "news",
+    "report",
+    "today",
+    "latest",
+    "using",
+    "based",
+    "global",
+    "中国",
+    "美国",
+    "行业",
+    "最新",
+    "过去",
+    "小时",
+    "今日",
+    "目前",
+    "宣布",
+    "消息",
+    "表示",
+    "称",
+    "正在",
+    "进一步",
+    "成为",
+    "相关",
+    "推出",
+    "发布",
+    "开发",
+    "升级",
+    "整合",
+    "agent",
+    "copilot",
+    "模型",
+    "人工智能",
+}
+
+STORY_KIND_KEYWORDS = {
+    "收购",
+    "融资",
+    "投资",
+    "发布",
+    "推出",
+    "上线",
+    "接入",
+    "开发",
+    "整合",
+    "合作",
+    "起诉",
+    "指控",
+    "禁用",
+    "封禁",
+    "监管",
+    "财报",
+    "agent",
+    "copilot",
 }
 
 PRIMARY_AI_KEYWORDS = {
@@ -335,8 +570,43 @@ def clean_html(raw_html):
     return re.sub(r"\s+", " ", text).strip()
 
 
+def strip_title_noise(text):
+    cleaned = clean_html(text)
+    for pattern in TITLE_NOISE_PATTERNS:
+        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
 def normalize_text(*parts):
     return " ".join(part for part in parts if part).lower()
+
+
+def canonicalize_match_text(*parts):
+    normalized = normalize_text(*(strip_title_noise(part) for part in parts if part))
+    for source, target in MATCH_REPLACEMENTS:
+        if re.fullmatch(r"[a-z0-9][a-z0-9\s.+#-]*", source):
+            normalized = re.sub(
+                rf"(?<![a-z0-9]){re.escape(source)}(?![a-z0-9])",
+                f" {target} ",
+                normalized,
+            )
+        else:
+            normalized = normalized.replace(source, f" {target} ")
+
+    for alias, target in sorted(ENTITY_ALIASES.items(), key=lambda item: -len(item[0])):
+        if re.fullmatch(r"[a-z0-9][a-z0-9\s.+#-]*", alias):
+            normalized = re.sub(
+                rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])",
+                f" {target} ",
+                normalized,
+            )
+        else:
+            normalized = normalized.replace(alias, f" {target} ")
+
+    normalized = re.sub(r"[“”\"'`‘’（）()【】\[\]<>《》]", " ", normalized)
+    normalized = re.sub(r"[/|｜,:：;；!！?？]+", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()
 
 
 def tokenize_ascii(text):
@@ -363,26 +633,84 @@ def tokenize_cjk_ngrams(text):
     return grams
 
 
-def build_similarity_signature(title, summary):
-    title_text = clean_html(title)
-    summary_text = clean_html(summary)[:180]
-    content_text = normalize_text(title_text, summary_text)
-    title_tokens = tokenize_ascii(title_text) | tokenize_cjk_ngrams(title_text)
+def extract_core_tokens(text):
+    normalized = canonicalize_match_text(text)
+    tokens = tokenize_ascii(normalized) | tokenize_cjk_ngrams(normalized)
+    core_tokens = set()
+    for token in tokens:
+        if token.isdigit():
+            continue
+        if token in COMMON_ENTITY_TOKENS:
+            continue
+        if token in GENERIC_SIMILARITY_WORDS or token in EVENT_STOPWORDS:
+            continue
+        if len(token) < 2:
+            continue
+        core_tokens.add(token)
+    return core_tokens
+
+
+def extract_focus_tokens(text):
+    focus_tokens = set()
+    for token in extract_core_tokens(text):
+        if token in STORY_KIND_KEYWORDS or token in POLICY_KEYWORDS:
+            continue
+        if len(token) < 3:
+            continue
+        focus_tokens.add(token)
+    return focus_tokens
+
+
+def build_title_core_text(title):
+    return " ".join(sorted(extract_core_tokens(title)))
+
+
+def build_similarity_signature(title, summary, original_title=""):
+    title_text = strip_title_noise(title)
+    summary_text = clean_html(summary)[:220]
+    canonical_title = canonicalize_match_text(title_text)
+    canonical_summary = canonicalize_match_text(summary_text)
+    canonical_original_title = canonicalize_match_text(original_title)
+    canonical_content = canonicalize_match_text(
+        title_text, summary_text, original_title
+    )
+    title_tokens = tokenize_ascii(canonical_title) | tokenize_cjk_ngrams(canonical_title)
     body_tokens = (
-        title_tokens | tokenize_ascii(summary_text) | tokenize_cjk_ngrams(summary_text)
+        title_tokens
+        | tokenize_ascii(canonical_summary)
+        | tokenize_cjk_ngrams(canonical_summary)
+        | tokenize_ascii(canonical_original_title)
+        | tokenize_cjk_ngrams(canonical_original_title)
+    )
+    core_title_tokens = extract_core_tokens(title_text)
+    core_body_tokens = (
+        core_title_tokens
+        | extract_core_tokens(summary_text)
+        | extract_core_tokens(original_title)
+    )
+    focus_tokens = (
+        extract_focus_tokens(title_text)
+        | extract_focus_tokens(summary_text)
+        | extract_focus_tokens(original_title)
     )
     strong_tokens = {
         token
-        for token in body_tokens
-        if len(token) >= 4
-        and token not in COMMON_ENTITY_TOKENS
+        for token in core_body_tokens
+        if len(token) >= 3
         and token not in GENERIC_SIMILARITY_WORDS
     }
     actor_tokens = {
-        token for token in COMMON_ENTITY_TOKENS if keyword_matches(content_text, token)
+        token
+        for token in COMMON_ENTITY_TOKENS
+        if keyword_matches(canonical_content, token)
     }
     policy_tokens = {
-        token for token in POLICY_KEYWORDS if keyword_matches(content_text, token)
+        token for token in POLICY_KEYWORDS if keyword_matches(canonical_content, token)
+    }
+    story_kind_tokens = {
+        token
+        for token in STORY_KIND_KEYWORDS
+        if keyword_matches(canonical_content, token)
     }
     return {
         "title_tokens": title_tokens,
@@ -390,6 +718,10 @@ def build_similarity_signature(title, summary):
         "strong_tokens": strong_tokens,
         "actor_tokens": actor_tokens,
         "policy_tokens": policy_tokens,
+        "story_kind_tokens": story_kind_tokens,
+        "title_core_tokens": core_title_tokens,
+        "title_core_text": " ".join(sorted(core_title_tokens)),
+        "focus_tokens": focus_tokens,
     }
 
 
@@ -402,17 +734,85 @@ def jaccard_similarity(left, right):
     return len(left & right) / len(union)
 
 
+def overlap_similarity(left, right):
+    if not left or not right:
+        return 0.0
+    return len(left & right) / min(len(left), len(right))
+
+
+def sequence_similarity(left, right):
+    if not left or not right:
+        return 0.0
+    return SequenceMatcher(None, left, right).ratio()
+
+
 def compute_item_value(item):
     age_hours = max(0.0, (now_bj.timestamp() - item["timestamp"]) / 3600)
-    freshness_bonus = max(0.0, 6.0 - min(age_hours, 6.0))
-    summary_bonus = min(len(item["summary"]), 140) / 28
-    strong_bonus = min(len(item["signature"]["strong_tokens"]), 4)
+    if age_hours <= 3:
+        freshness_score = 25
+    elif age_hours <= 6:
+        freshness_score = 22
+    elif age_hours <= 12:
+        freshness_score = 17
+    elif age_hours <= 18:
+        freshness_score = 12
+    else:
+        freshness_score = 8
+
+    actor_tokens = item["signature"]["actor_tokens"]
+    story_kind_tokens = item["signature"]["story_kind_tokens"]
+    focus_tokens = item["signature"]["focus_tokens"]
+    content = normalize_text(item["title"], item["summary"], item["original_title"])
+
+    story_level_score = 14
+    if (
+        len(actor_tokens & TOP_TIER_ACTORS) > 0
+        and (
+            story_kind_tokens & MAJOR_EVENT_KEYWORDS
+            or has_any(content, STRATEGIC_PRODUCT_KEYWORDS)
+        )
+    ):
+        story_level_score = 35
+    elif story_kind_tokens & MAJOR_EVENT_KEYWORDS or has_any(
+        content, STRATEGIC_PRODUCT_KEYWORDS
+    ):
+        story_level_score = 28
+    elif item["relevance_score"] >= 5 or len(focus_tokens) >= 4:
+        story_level_score = 22
+
+    source_score = min(20, round(SOURCE_CREDIBILITY.get(item["source"], 5.0) * 2, 1))
+
+    impact_score = 4
+    if len(actor_tokens & TOP_TIER_ACTORS) > 0:
+        impact_score += 3
+    if has_any(content, HARDWARE_KEYWORDS | EMBODIED_KEYWORDS):
+        impact_score += 1.5
+    if has_any(content, POLICY_KEYWORDS):
+        impact_score += 2
+    if has_any(content, STRATEGIC_PRODUCT_KEYWORDS):
+        impact_score += 2
+    impact_score = min(10, impact_score)
+
+    uniqueness_score = min(
+        10,
+        4
+        + min(len(focus_tokens), 4)
+        + min(len(item["signature"]["strong_tokens"]), 2),
+    )
+
+    item["score_breakdown"] = {
+        "story_level": story_level_score,
+        "freshness": freshness_score,
+        "source": source_score,
+        "impact": impact_score,
+        "uniqueness": uniqueness_score,
+    }
     return (
-        SOURCE_PRIORITY.get(item["source"], 4) * 10
-        + item["relevance_score"] * 4
-        + freshness_bonus
-        + summary_bonus
-        + strong_bonus
+        story_level_score
+        + freshness_score
+        + source_score
+        + impact_score
+        + uniqueness_score
     )
 
 
@@ -426,26 +826,78 @@ def are_likely_duplicates(left, right):
     shared_policy_tokens = (
         left["signature"]["policy_tokens"] & right["signature"]["policy_tokens"]
     )
+    shared_story_kind_tokens = (
+        left["signature"]["story_kind_tokens"] & right["signature"]["story_kind_tokens"]
+    )
+    shared_title_core_tokens = (
+        left["signature"]["title_core_tokens"] & right["signature"]["title_core_tokens"]
+    )
+    shared_focus_tokens = left["signature"]["focus_tokens"] & right["signature"]["focus_tokens"]
     title_similarity = jaccard_similarity(
         left["signature"]["title_tokens"], right["signature"]["title_tokens"]
     )
     body_similarity = jaccard_similarity(
         left["signature"]["body_tokens"], right["signature"]["body_tokens"]
     )
+    title_core_overlap = overlap_similarity(
+        left["signature"]["title_core_tokens"], right["signature"]["title_core_tokens"]
+    )
+    title_core_similarity = sequence_similarity(
+        left["signature"]["title_core_text"], right["signature"]["title_core_text"]
+    )
+    if left["link"].strip().lower() == right["link"].strip().lower():
+        return True
+    if (
+        shared_actor_tokens
+        and shared_title_core_tokens
+        and (
+            title_core_overlap >= 0.72
+            or title_core_similarity >= 0.72
+            or (shared_story_kind_tokens and title_core_overlap >= 0.5)
+        )
+    ):
+        return True
+    if (
+        shared_actor_tokens
+        and len(shared_focus_tokens) >= 2
+        and (
+            shared_story_kind_tokens
+            or body_similarity >= 0.18
+            or title_core_similarity >= 0.62
+            or title_core_overlap >= 0.34
+        )
+    ):
+        return True
+    if (
+        shared_actor_tokens
+        and len(shared_focus_tokens) >= 1
+        and shared_story_kind_tokens
+        and (title_core_overlap >= 0.45 or title_core_similarity >= 0.58)
+    ):
+        return True
     if (
         shared_actor_tokens
         and shared_strong_tokens
-        and (shared_policy_tokens or body_similarity >= 0.18)
+        and len(shared_focus_tokens) >= 1
+        and (title_similarity >= 0.28 or body_similarity >= 0.24)
     ):
         return True
     if len(shared_strong_tokens) >= 2 and (
-        title_similarity >= 0.16 or body_similarity >= 0.16
+        title_similarity >= 0.16
+        or body_similarity >= 0.16
+        or title_core_overlap >= 0.5
     ):
         return True
     if (
         len(shared_strong_tokens) >= 1
         and title_similarity >= 0.38
         and body_similarity >= 0.22
+    ):
+        return True
+    if (
+        len(shared_title_core_tokens) >= 2
+        and title_core_overlap >= 0.8
+        and (shared_actor_tokens or shared_story_kind_tokens)
     ):
         return True
     if body_similarity >= 0.68:
@@ -463,6 +915,46 @@ def deduplicate_results(items):
         if any(are_likely_duplicates(item, existing) for existing in selected):
             continue
         selected.append(item)
+    return selected
+
+
+def dominant_actor(item):
+    actor_tokens = sorted(item["signature"]["actor_tokens"] & TOP_TIER_ACTORS)
+    if actor_tokens:
+        return actor_tokens[0]
+    actor_tokens = sorted(item["signature"]["actor_tokens"])
+    if actor_tokens:
+        return actor_tokens[0]
+    return ""
+
+
+def distribute_category_items(items, limit):
+    remaining = list(items)
+    selected = []
+    streak_actor = ""
+    streak_count = 0
+
+    while remaining and len(selected) < limit:
+        chosen_index = None
+        for index, item in enumerate(remaining):
+            actor = item.get("dominant_actor", "")
+            if actor and actor == streak_actor and streak_count >= MAX_CONSECUTIVE_SAME_ACTOR:
+                continue
+            chosen_index = index
+            break
+
+        if chosen_index is None:
+            chosen_index = 0
+
+        chosen = remaining.pop(chosen_index)
+        actor = chosen.get("dominant_actor", "")
+        if actor and actor == streak_actor:
+            streak_count += 1
+        else:
+            streak_actor = actor
+            streak_count = 1 if actor else 0
+        selected.append(chosen)
+
     return selected
 
 
@@ -614,7 +1106,7 @@ def fetch_aibase_article_datetime(link, headers=None):
 
 
 def add_result(config, title, link, dt_bj, summary):
-    normalized_title = re.sub(r"\s+", " ", title).strip()
+    normalized_title = strip_title_noise(title)
     unique_key = link.strip().lower()
     if not is_pure_ai_news(
         title,
@@ -640,19 +1132,24 @@ def add_result(config, title, link, dt_bj, summary):
             display_summary = summarize_text(translate_text(display_summary), limit=100)
 
     relevance_score = ai_relevance_score(title, summary)
-    signature = build_similarity_signature(display_title, display_summary or summary)
+    signature = build_similarity_signature(
+        display_title,
+        display_summary or summary,
+        original_title=normalized_title if config["lang"] == "en" else "",
+    )
     item = {
         "source": config["name"],
         "title": display_title,
         "original_title": normalized_title if config["lang"] == "en" else "",
         "link": link,
-        "time": dt_bj.strftime("%Y-%m-%d %H:%M"),
+        "time": dt_bj.strftime('%m-%d %H:%M'),
         "timestamp": dt_bj.timestamp(),
         "summary": display_summary,
         "relevance_score": relevance_score,
         "signature": signature,
     }
     item["value_score"] = compute_item_value(item)
+    item["dominant_actor"] = dominant_actor(item)
 
     with results_lock:
         results.append(item)
@@ -745,11 +1242,19 @@ def classify_item(item):
 
 def build_html(categories):
     total_items = sum(len(cat_data["items"]) for cat_data in categories.values())
+    version = "v1.0.6"
     active_categories = [
         (cat_name, cat_data)
         for cat_name, cat_data in categories.items()
         if cat_data["items"]
     ]
+    category_labels = {
+        "大模型与前沿技术": "大模型与前沿",
+        "AI算力与硬件芯片": "AI算力与芯片",
+        "具身智能与智能终端": "具身智能与终端",
+        "政策风向与投融资": "政策与投融资",
+        "综合前沿资讯": "综合资讯",
+    }
 
     html_parts = [
         "<!DOCTYPE html>",
@@ -757,118 +1262,131 @@ def build_html(categories):
         "<head>",
         '    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">',
         "    <title>AI 行业 24 小时精选快讯</title>",
-        '    <script src="https://cdn.tailwindcss.com"></script>',
         "    <style>",
-        "        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');",
-        "        :root { --page-gutter: clamp(0.9rem, 2.4vw, 2rem); --page-block: clamp(1rem, 3vw, 2rem); --panel-radius: clamp(1.1rem, 2vw, 1.75rem); --card-padding: clamp(0.9rem, 1.8vw, 1.15rem); --hero-padding: clamp(1.25rem, 3vw, 2.5rem); --hero-title: clamp(2rem, 4vw, 3.5rem); --hero-copy: clamp(0.95rem, 1.4vw, 1rem); --section-title: clamp(1rem, 1.5vw, 1.15rem); --content-max-width: 1960px; }",
+        "        @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&family=Nunito:wght@600;700;800&family=Noto+Sans+SC:wght@400;500;700;800&display=swap');",
+        "        :root { --mint: #19c8b9; --mint-soft: #e6f9f6; --leaf: #6fba2c; --sun: #f5c31c; --soil: #794f27; --soil-soft: #9f927d; --cream: #f8f8f0; --cream-deep: #f0e8d8; --paper: #fbfaf4; --line: #c4b89e; --line-strong: #a89878; --shadow: 0 4px 0 rgba(196, 184, 158, 0.98); --shadow-soft: 0 18px 40px -28px rgba(61, 52, 40, 0.22); --radius-xl: 28px; --radius-lg: 24px; --radius-md: 20px; --radius-pill: 999px; --page-gutter: clamp(16px, 2vw, 28px); --page-block: clamp(18px, 3vw, 32px); --hero-title: clamp(2.2rem, 5vw, 4rem); --content-max-width: 1900px; }",
+        "        * { box-sizing: border-box; }",
         "        html { scroll-behavior: smooth; }",
-        "        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: radial-gradient(circle at top, #eff6ff 0%, #f8fafc 32%, #eef2ff 100%); color: #0f172a; }",
-        "        .news-card { transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; }",
-        "        .news-card:hover { transform: translateY(-2px); box-shadow: 0 16px 40px -24px rgba(15, 23, 42, 0.35); border-color: rgba(59, 130, 246, 0.28); }",
-        "        .hide-scrollbar::-webkit-scrollbar { display: none; }",
-        "        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }",
-        "        .en-subtitle { color: #64748b; font-size: 0.75rem; margin-top: 2px; }",
-        "        .glass-panel { background: rgba(255, 255, 255, 0.78); backdrop-filter: blur(14px); }",
-        "        .page-shell { width: min(100%, var(--content-max-width)); margin: 0 auto; padding: var(--page-block) var(--page-gutter); }",
-        "        .hero-panel { padding: var(--hero-padding); border-radius: var(--panel-radius); }",
-        "        .hero-grid { display: grid; gap: clamp(1rem, 3vw, 2rem); grid-template-columns: minmax(0, 1.7fr) minmax(16rem, 0.95fr); align-items: stretch; }",
-        "        .hero-title { font-size: var(--hero-title); line-height: 1.02; }",
-        "        .hero-copy { font-size: var(--hero-copy); line-height: 1.7; }",
-        "        .stats-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(0.65rem, 1.2vw, 0.9rem); min-width: min(100%, 20rem); }",
-        "        .section-anchor { scroll-margin-top: 96px; }",
-        "        .news-title, .summary-compact { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; }",
-        "        .news-title { -webkit-line-clamp: 2; }",
-        "        .summary-compact { -webkit-line-clamp: 2; }",
-        "        .nav-shell { top: clamp(0.35rem, 1vw, 0.75rem); }",
-        "        .nav-track { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }",
-        "        .category-grid { display: grid; gap: clamp(1rem, 2vw, 1.5rem); grid-template-columns: repeat(auto-fit, minmax(min(100%, 21rem), 1fr)); align-items: start; }",
-        "        .cat-panel { border-radius: var(--panel-radius); padding: clamp(0.9rem, 1.8vw, 1.1rem); min-width: 0; }",
-        "        .section-head { gap: clamp(0.65rem, 1.2vw, 0.9rem); }",
-        "        .section-title { font-size: var(--section-title); }",
-        "        .news-card { padding: var(--card-padding); min-width: 0; }",
-        "        .meta-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }",
-        "        .footer-panel { border-radius: calc(var(--panel-radius) + 0.2rem); }",
-        "        @media (max-width: 960px) { .hero-grid { grid-template-columns: 1fr; } }",
-        "        @media (max-width: 767px) { .nav-track { flex-wrap: nowrap; width: max-content; } .stats-grid { grid-template-columns: 1fr; } .section-anchor { scroll-margin-top: 84px; } }",
+        "        body { margin: 0; font-family: 'Noto Sans SC', 'M PLUS Rounded 1c', sans-serif; color: var(--soil); background: radial-gradient(circle at top, rgba(245, 195, 28, 0.16), transparent 24%), radial-gradient(circle at left 14%, rgba(111, 186, 44, 0.12), transparent 20%), linear-gradient(180deg, #f8f8f0 0%, #f5f1e6 38%, #f3eedf 100%); }",
+        "        body::before { content: ''; position: fixed; inset: 0; pointer-events: none; opacity: 0.22; background-image: radial-gradient(rgba(121, 79, 39, 0.11) 1px, transparent 1px); background-size: 18px 18px; }",
+        "        a { color: inherit; }",
+        "        .page-shell { position: relative; width: min(100%, var(--content-max-width)); margin: 0 auto; padding: var(--page-block) var(--page-gutter) 40px; }",
+        "        .hero-panel, .nav-shell, .cat-panel, .footer-panel { position: relative; background: rgba(251, 250, 244, 0.96); border: 3px solid var(--line); box-shadow: var(--shadow), var(--shadow-soft); }",
+        "        .hero-panel { overflow: hidden; padding: clamp(22px, 4vw, 38px); border-radius: 36px 36px 28px 28px / 28px 28px 32px 32px; }",
+        "        .hero-panel::before { content: ''; position: absolute; width: 240px; height: 240px; right: -60px; top: -80px; border-radius: 48% 52% 44% 56%; background: radial-gradient(circle, rgba(25, 200, 185, 0.16) 0%, rgba(25, 200, 185, 0) 70%); }",
+        "        .hero-panel::after { content: ''; position: absolute; width: 180px; height: 180px; left: -50px; bottom: -70px; border-radius: 50%; background: radial-gradient(circle, rgba(245, 195, 28, 0.12) 0%, rgba(245, 195, 28, 0) 72%); }",
+        "        .hero-kicker { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: var(--radius-pill); background: var(--mint-soft); border: 2px solid rgba(25, 200, 185, 0.22); font-family: 'Nunito', sans-serif; font-size: 0.86rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: #158879; }",
+        "        .hero-grid { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.9fr); gap: clamp(18px, 3vw, 28px); align-items: center; }",
+        "        .hero-title { margin: 16px 0 0; font-family: 'Nunito', 'Noto Sans SC', sans-serif; font-size: var(--hero-title); line-height: 0.96; letter-spacing: -0.03em; color: var(--soil); }",
+        "        .hero-copy { margin: 16px 0 0; max-width: 760px; font-size: 1rem; line-height: 1.9; color: var(--soil-soft); }",
+        "        .stats-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-content: center; }",
+        "        .stat-card { padding: 16px 16px 14px; border-radius: 24px; border: 2px solid var(--line); background: linear-gradient(180deg, rgba(248,248,240,0.98), rgba(240,232,216,0.94)); box-shadow: 0 3px 0 rgba(196, 184, 158, 0.98); min-height: 116px; }",
+        "        .stat-label { font-size: 0.78rem; color: var(--soil-soft); }",
+        "        .stat-value { margin-top: 8px; font-family: 'Nunito', 'Noto Sans SC', sans-serif; font-size: 1.02rem; font-weight: 800; color: var(--soil); }",
+        "        .hero-divider { position: relative; z-index: 1; margin-top: 22px; height: 14px; border-radius: 999px; background: repeating-linear-gradient(90deg, rgba(196, 184, 158, 0.72) 0 12px, rgba(240, 232, 216, 0.95) 12px 24px); opacity: 1; }",
+        "        .nav-shell { position: sticky; top: 10px; z-index: 20; margin: 18px 0 26px; padding: 12px; border-radius: 28px; overflow-x: auto; background: rgba(248, 248, 240, 0.96); }",
+        "        .nav-shell::-webkit-scrollbar { display: none; }",
+        "        .nav-shell { -ms-overflow-style: none; scrollbar-width: none; }",
+        "        .nav-track { display: flex; gap: 10px; flex-wrap: wrap; min-width: max-content; }",
+        "        .cat-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 18px; border: 2px solid var(--line); border-radius: var(--radius-pill); background: var(--paper); color: var(--soil-soft); font-family: 'Nunito', 'Noto Sans SC', sans-serif; font-size: 0.92rem; font-weight: 800; cursor: pointer; box-shadow: 0 3px 0 rgba(196, 184, 158, 0.98); transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease, color 0.18s ease; white-space: nowrap; }",
+        "        .cat-btn:hover { transform: translateY(-1px); border-color: var(--line-strong); box-shadow: 0 4px 0 rgba(164, 143, 114, 0.95); }",
+        "        .cat-btn.is-active { color: var(--soil); border-color: rgba(25, 200, 185, 0.32); background: linear-gradient(180deg, var(--mint-soft), #f7fffd); box-shadow: 0 4px 0 rgba(25, 200, 185, 0.38); }",
+        "        .cat-count { display: inline-flex; min-width: 28px; height: 28px; align-items: center; justify-content: center; padding: 0 8px; border-radius: 999px; background: rgba(122, 83, 48, 0.08); color: var(--soil); font-size: 0.76rem; }",
+        "        .category-grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); align-items: start; }",
+        "        .cat-panel { padding: 16px; border-radius: 30px; scroll-margin-top: 104px; background: linear-gradient(180deg, rgba(251, 250, 244, 0.98), rgba(240, 232, 216, 0.9)); }",
+        "        .section-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; padding-bottom: 14px; border-bottom: 2px dashed rgba(164, 143, 114, 0.28); }",
+        "        .section-icon { display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 18px; background: linear-gradient(180deg, #fff7df, #f5deb7); border: 2px solid var(--line); box-shadow: 0 3px 0 rgba(205, 187, 159, 0.95); font-size: 1.35rem; }",
+        "        .section-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }",
+        "        .section-title { margin: 0; font-family: 'Nunito', 'Noto Sans SC', sans-serif; font-size: 1.1rem; line-height: 1.2; color: var(--soil); }",
+        "        .section-subtitle { margin-top: 4px; font-size: 0.82rem; color: var(--soil-soft); }",
+        "        .section-count { display: inline-flex; align-items: center; justify-content: center; min-width: 42px; height: 32px; padding: 0 10px; border-radius: 999px; background: rgba(111, 186, 44, 0.14); border: 2px solid rgba(111, 186, 44, 0.14); font-size: 0.8rem; font-weight: 800; color: #5f962e; }",
+        "        .news-list { display: flex; flex-direction: column; gap: 12px; }",
+        "        .news-card { display: flex; gap: 12px; padding: 14px; border-radius: 22px; border: 2px solid rgba(196, 184, 158, 0.92); background: linear-gradient(180deg, rgba(251,250,244,0.98), rgba(248,248,240,0.98)); box-shadow: 0 3px 0 rgba(196, 184, 158, 0.98); transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease; min-width: 0; }",
+        "        .news-card:hover { transform: translateY(-2px); border-color: rgba(25, 200, 185, 0.38); box-shadow: 0 4px 0 rgba(25, 200, 185, 0.34), 0 18px 32px -26px rgba(122, 83, 48, 0.38); }",
+        "        .news-rank { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; flex: 0 0 38px; border-radius: 16px; background: linear-gradient(180deg, #fff3bf, #f7d768); border: 2px solid rgba(164, 143, 114, 0.52); font-family: 'Nunito', sans-serif; font-weight: 800; color: var(--soil); box-shadow: 0 3px 0 rgba(219, 169, 14, 0.45); }",
+        "        .news-body { min-width: 0; flex: 1; }",
+        "        .meta-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }",
+        "        .source-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: var(--mint-soft); border: 2px solid rgba(25, 200, 185, 0.18); font-size: 0.75rem; font-weight: 800; color: #158879; }",
+        "        .time-stamp { font-size: 0.78rem; color: var(--soil-soft); }",
+        "        .news-title { margin: 10px 0 0; font-size: 1rem; line-height: 1.55; font-weight: 800; color: var(--soil); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }",
+        "        .news-title a { text-decoration: none; }",
+        "        .news-title a:hover { color: #158879; }",
+        "        .en-subtitle { margin-top: 6px; font-size: 0.75rem; color: var(--soil-soft); font-family: 'M PLUS Rounded 1c', sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }",
+        "        .summary-compact { margin: 8px 0 0; font-size: 0.86rem; line-height: 1.7; color: #82664a; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }",
+        "        .footer-panel { margin-top: 28px; padding: 18px 20px; border-radius: 28px; text-align: center; color: var(--soil-soft); font-size: 0.88rem; }",
+        "        .hidden-section { display: none !important; }",
+        "        @media (max-width: 980px) { .hero-grid { grid-template-columns: 1fr; } .stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }",
+        "        @media (max-width: 640px) { .page-shell { padding-inline: 12px; } .nav-track { flex-wrap: nowrap; } .stats-grid { grid-template-columns: 1fr; } .hero-panel { padding: 20px; } .news-card { padding: 12px; } .section-icon { width: 46px; height: 46px; } .stat-card { min-height: unset; } }",
         "    </style>",
         "</head>",
-        '<body class="antialiased">',
+        "<body>",
         '    <div class="page-shell">',
-        '        <header class="hero-panel relative overflow-hidden border border-white/70 bg-slate-950 text-white shadow-[0_30px_80px_-40px_rgba(15,23,42,0.8)]">',
-        '            <div class="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(96,165,250,0.35),_transparent_30%),radial-gradient(circle_at_bottom_left,_rgba(129,140,248,0.28),_transparent_35%)]"></div>',
-        '            <div class="relative">',
-        '                <div class="hero-grid">',
-        '                    <div class="flex max-w-3xl flex-col justify-center">',
-        '                        <div class="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium tracking-wide text-slate-200">AI Daily News</div>',
-        '                        <h1 class="hero-title mt-4 font-semibold tracking-tight">AI 行业 24 小时日报</h1>',
-        '                        <p class="hero-copy mt-4 max-w-2xl text-slate-300">按主题并列整理过去 24 小时的 AI 动态，减少门户噪音，优先保留真正与模型、算力、具身智能和行业趋势相关的内容。</p>',
-        "                    </div>",
-        '                    <div class="stats-grid">',
-        f'                        <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-3"><div class="text-xs text-slate-300">日期</div><div class="mt-1 text-sm font-semibold">{now_bj.strftime("%Y年%m月%d日")}</div></div>',
-        f'                        <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-3"><div class="text-xs text-slate-300">新闻条数</div><div class="mt-1 text-sm font-semibold">{total_items} 条</div></div>',
-        f'                        <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-3"><div class="text-xs text-slate-300">分类数</div><div class="mt-1 text-sm font-semibold">{len(active_categories)} 类</div></div>',
-        f'                        <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-3"><div class="text-xs text-slate-300">上次刷新时间</div><div class="mt-1 text-sm font-semibold">{now_bj.strftime("%Y-%m-%d %H:%M")}</div></div>',
-        "                    </div>",
+        '        <header class="hero-panel">',
+        '            <div class="hero-grid">',
+        '                <div>',
+        '                    <div class="hero-kicker">Nook-style AI Daily</div>',
+        '                    <h1 class="hero-title">AI 行业 24 小时日报</h1>',
+        '                    <p class="hero-copy">按主题整理过去 24 小时的 AI 动态，保留真正与模型、算力、具身智能和行业趋势相关的事件，并优先合并同题转载与改写标题。</p>',
+        "                </div>",
+        '                <div class="stats-grid">',
+        f'                    <div class="stat-card"><div class="stat-label">日期</div><div class="stat-value">{now_bj.strftime("%Y年%m月%d日")}</div></div>',
+        f'                    <div class="stat-card"><div class="stat-label">新闻条数</div><div class="stat-value">{total_items} 条</div></div>',
+        f'                    <div class="stat-card"><div class="stat-label">刷新时间</div><div class="stat-value">{now_bj.strftime("%Y-%m-%d %H:%M")}</div></div>',
         "                </div>",
         "            </div>",
+        '            <div class="hero-divider"></div>',
         "        </header>",
-        '        <nav class="nav-shell sticky z-50 mt-6 mb-8 overflow-x-auto rounded-2xl border border-white/70 glass-panel px-3 py-3 shadow-sm hide-scrollbar">',
+        '        <nav class="nav-shell">',
         '            <div class="nav-track">',
-        '                <button onclick="filterCategory(\'all\', this)" class="cat-btn active rounded-full border border-transparent bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all whitespace-nowrap">全部分类</button>',
+        '                <button onclick="filterCategory(\'all\', this)" class="cat-btn is-active">全部分类 <span class="cat-count">ALL</span></button>',
     ]
 
     for cat_name, cat_data in active_categories:
         html_parts.append(
-            f'<button onclick="filterCategory(\'{cat_data["id"]}\', this)" class="cat-btn rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition-all whitespace-nowrap hover:border-slate-300 hover:bg-slate-50">{cat_data["icon"]} {cat_name} <span class="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">{len(cat_data["items"])} </span></button>'
+            f'<button onclick="filterCategory(\'{cat_data["id"]}\', this)" class="cat-btn">{cat_data["icon"]} {html.escape(category_labels.get(cat_name, cat_name))} <span class="cat-count">{len(cat_data["items"])}</span></button>'
         )
 
     html_parts.append(
-        f'</div></nav><main id="news-container"><div class="category-grid">'
+        '</div></nav><main id="news-container"><div class="category-grid">'
     )
 
     for cat_name, cat_data in active_categories:
         items = cat_data["items"]
         html_parts.append(
-            f'<section id="{cat_data["id"]}" class="cat-section cat-panel section-anchor flex h-full flex-col border border-white/70 glass-panel shadow-[0_20px_60px_-45px_rgba(15,23,42,0.65)]">'
+            f'<section id="{cat_data["id"]}" class="cat-section cat-panel">'
         )
         html_parts.append(
-            f'<div class="section-head mb-4 flex items-center"><span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-lg text-white shadow-sm">{cat_data["icon"]}</span><div class="min-w-0 flex-1"><div class="meta-row"><h2 class="section-title truncate font-semibold tracking-tight text-slate-900">{cat_name}</h2><span class="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">{len(items)} 条</span></div><p class="mt-1 text-xs text-slate-500">精选动态</p></div></div>'
+            f'<div class="section-head"><span class="section-icon">{cat_data["icon"]}</span><div class="news-body"><div class="section-title-row"><h2 class="section-title">{cat_name}</h2><span class="section-count">{len(items)} 条</span></div><div class="section-subtitle">精选动态</div></div></div>'
         )
-        html_parts.append('<div class="flex flex-1 flex-col gap-3">')
+        html_parts.append('<div class="news-list">')
         for idx, item in enumerate(items, 1):
             summary = item["summary"]
             if summary.startswith("IT之家"):
                 summary = summary.split("消息，", 1)[-1].strip()
             subtitle_html = (
-                f'<div class="en-subtitle font-mono truncate">{html.escape(item["original_title"])} </div>'
+                f'<div class="en-subtitle">{html.escape(item["original_title"])} </div>'
                 if item.get("original_title")
                 else ""
             )
             html_parts.append(
-                f'<article class="news-card rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm"><div class="flex items-start gap-3"><div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-sm font-semibold text-slate-700">{idx}</div><div class="flex min-w-0 flex-1 flex-col"><div class="meta-row text-[11px]"><span class="truncate rounded-full bg-blue-50 px-2.5 py-1 font-medium text-blue-700">{html.escape(item["source"])} </span><time class="shrink-0 text-slate-400">{html.escape(item["time"])} </time></div><h3 class="news-title mt-3 text-[clamp(0.98rem,1.6vw,1rem)] font-semibold leading-6 text-slate-900"><a href="{html.escape(item["link"])}" target="_blank" class="transition-colors hover:text-blue-600">{html.escape(item["title"])} </a></h3>{subtitle_html}<p class="summary-compact mt-2 text-[13px] leading-5 text-slate-600">{html.escape(summary)}</p></div></div></article>'
+                f'<article class="news-card"><div class="news-rank">{idx}</div><div class="news-body"><div class="meta-row"><span class="source-pill">{html.escape(item["source"])}</span><time class="time-stamp">{html.escape(item["time"])}</time></div><h3 class="news-title"><a href="{html.escape(item["link"])}" target="_blank" rel="noopener noreferrer">{html.escape(item["title"])}</a></h3>{subtitle_html}<p class="summary-compact">{html.escape(summary)}</p></div></article>'
             )
         html_parts.append("</div></section>")
 
     html_parts.extend(
         [
             "</div></main>",
-            '        <footer class="footer-panel mt-10 border border-white/70 glass-panel px-6 py-5 text-center text-sm text-slate-500 shadow-sm">由 Claude (AI News Skill) 自动化聚合生成 · 按主题分栏展示 · 海外资讯双语翻译</footer>',
+            f'        <footer class="footer-panel">{version}</footer>',
             "    </div>",
             "    <script>",
             "        function filterCategory(catId, btnElement) {",
-            "            document.querySelectorAll('.cat-btn').forEach(btn => {",
-            "                btn.classList.remove('bg-slate-950', 'text-white', 'border-transparent', 'font-semibold');",
-            "                btn.classList.add('bg-white', 'text-slate-600', 'border-slate-200', 'font-medium');",
-            "            });",
-            "            btnElement.classList.remove('bg-white', 'text-slate-600', 'border-slate-200', 'font-medium');",
-            "            btnElement.classList.add('bg-slate-950', 'text-white', 'border-transparent', 'font-semibold');",
+            "            document.querySelectorAll('.cat-btn').forEach(btn => btn.classList.remove('is-active'));",
+            "            btnElement.classList.add('is-active');",
             "            document.querySelectorAll('.cat-section').forEach(sec => {",
             "                if (catId === 'all' || sec.id === catId) {",
-            "                    sec.style.display = 'flex';",
-            "                    sec.style.opacity = '0';",
-            "                    setTimeout(() => { sec.style.transition = 'opacity 0.3s ease'; sec.style.opacity = '1'; }, 10);",
+            "                    sec.classList.remove('hidden-section');",
             "                } else {",
-            "                    sec.style.display = 'none';",
+            "                    sec.classList.add('hidden-section');",
             "                }",
             "            });",
             "            if (catId !== 'all') { document.getElementById(catId).scrollIntoView({ behavior: 'smooth', block: 'start' }); }",
@@ -903,8 +1421,12 @@ categories = {
 
 for item in results:
     category = classify_item(item)
-    if len(categories[category]["items"]) < MAX_ITEMS_PER_CATEGORY:
-        categories[category]["items"].append(item)
+    categories[category]["items"].append(item)
+
+for category in categories.values():
+    category["items"] = distribute_category_items(
+        category["items"], MAX_ITEMS_PER_CATEGORY
+    )
 
 save_dir = os.path.expanduser(
     os.environ.get("AI_DAILY_NEWS_OUTPUT_DIR", DEFAULT_OUTPUT_DIR)
